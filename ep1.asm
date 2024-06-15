@@ -1,101 +1,385 @@
 segment code
 ..start:
 	; iniciar os registros de segmento DS e SS e o ponteiro de pilha SP
-	mov 		ax,data
-	mov 		ds,ax
-	mov 		ax,stack
-	mov 		ss,ax
-	mov 		sp,stacktop
-
-    call video_setup
+	mov 	ax,data
+	mov 	ds,ax
+	mov 	ax,stack
+	mov 	ss,ax
+	mov 	sp,stacktop
+    call 	video_setup
 
     mov		byte[cor],branco_intenso
-    mov		ax,65
-    push		ax
+	call	draw_menu_lines
+	call	write_menu_names
+	call	initialize_mouse
+	jmp 	main
+
+sair:
+	call 	video_close
+    mov 	ah, 4ch
+	int 	21h
+
+main:
+	; mov		ah, 01h
+    ; int		16h
+    ; jnz 	sair
+	mov		ax, 03h
+	int		33h
+	test	bx, 01h
+	jz		main
+	cmp		cx, 65
+	jg		main
+	sub		dx, 80
+	jle		click_abrir
+	sub		dx, 80
+	jle		click_fir1
+	sub		dx, 80
+	jle		click_fir2
+	sub		dx, 80
+	jle		click_fir3
+	sub		dx, 80
+	jle		click_histograma
+	sub		dx, 80
+	jmp		sair
+
+write_menu_names:
+	call	write_abrir
+	call	write_fir1
+	call	write_fir2
+	call	write_fir3
+	call	write_histograma
+	call	write_sair
+	call	write_nome
+	ret
+
+click_abrir:
+	mov		byte[cor], branco_intenso
+	call	write_menu_names
+	mov		byte[cor], amarelo
+	call	abrir_function
+	jmp 	main
+
+click_fir1:
+	mov		byte[cor], branco_intenso
+	call	write_menu_names
+	mov		byte[cor], amarelo
+	call	fir1_function
+	jmp		main
+
+click_fir2:
+	mov		byte[cor], branco_intenso
+	call	write_menu_names
+	mov		byte[cor], amarelo
+	call	fir2_function
+	jmp		main
+
+click_fir3:
+	mov		byte[cor], branco_intenso
+	call	write_menu_names
+	mov		byte[cor], amarelo
+	call	fir3_function
+	jmp		main
+
+click_histograma:
+	mov		byte[cor], branco_intenso
+	call	write_menu_names
+	mov		byte[cor], amarelo
+	call	histograma_function
+	jmp		main
+
+initialize_mouse:
+	mov 	ax, 0001h
+    int 	33h
+	ret
+
+abrir_function:
+	call	write_abrir
+	call	read_txt
+	call	convert_vector_to_int
+	call	plot_sinal_original
+	; call	plot_histograma_original
+	ret
+
+fir1_function:
+	call	write_fir1
+	ret
+
+fir2_function:
+	call	write_fir2
+	ret
+
+fir3_function:
+	call	write_fir3
+	ret
+
+histograma_function:
+	call	write_histograma
+	ret
+
+read_txt:
+	; Open file
+    mov 	ah, 3dh
+    mov 	al, 0
+    mov 	dx, filename
+    int 	21h
+	mov		[handle], ax
+
+	; Read 2048 byte from file (read all at once)
+	mov 	ah, 3fh
+	mov 	bx, [handle]
+	mov 	cx, 2048
+	mov 	dx, sinal_array
+	int 	21h
+
+	mov		bx, ax
+	mov		byte[sinal_array+bx], '$'
+
+	; Close file
+	mov 	ah, 3eh
+	mov 	bx, [handle]
+	int 	21h
+	ret
+
+convert_vector_to_int:
+    mov di, int_sinal_array
+    mov si, sinal_array
+	mov word[sinal_size], 0
+	mov ch, 0
+	mov ax, 0
+
+.convert_number:
+    mov cl, byte[si]
+    cmp cl, '$'
+    je .end
+
+    ; Check for sign
+    mov ax, 0
+    cmp cl, '-'
+    je .convert_negative
+	jmp .convert_positive
+
+.convert_negative:
+	int 3
+    inc si
+	inc bx
+	int 3
+	mov cl, byte[si]
+	cmp cl, 10
+	je .store_number
+	sub cl, '0'
+	mov ch, 0
+	mov dx, 10
+	mul dx
+	sub ax, cx
+	jmp .convert_negative
+
+.convert_positive:
+	sub cl, '0'
+	mov ch, 0
+	add ax, cx
+	inc si
+.next_positive_digit:
+	mov cl, byte[si]
+	cmp cl, 10
+	je .store_number
+	sub cl, '0'
+	mov ch, 0
+	mov dx, 10
+	mul dx
+	add ax, cx
+	jmp .next_positive_digit
+
+.store_number:
+	mov [di], ax
+	mov ax, [sinal_size]
+	inc ax
+	mov [sinal_size], ax
+	inc di
+	jmp .convert_number
+
+.end:
+    ret
+
+plot_sinal_original:
+    mov si, 0                      ; si: index for int_sinal_array
+    mov cx, [sinal_size]           ; cx: number of elements to process
+
+.loop:
+    cmp si, cx                     ; Check if we reached the end of the array
+    jge .end
+
+	mov	ax, si
+	add ax, 66
+	push ax
+
+	mov ax, 0
+    mov al, [int_sinal_array + si] ; Load the value from int_sinal_array
+    ; Scale y value between 250 and 480
+    ; Formula: y_scaled = 250 + ((value + 128) * 231 / 256)
+    add al, 128                    ; Move range from [-128, 127] to [0, 255]
+    mov ah, 0                      ; Clear upper byte
+    mov bx, 231                    ; Multiply by 231
+    mul bx                         ; DX:AX = AX * BX
+    shr ax, 8                      ; Divide by 256 (use shift right by 8 bits)
+    add ax, 250                    ; Shift to start at 250
+
+    push si                        ; Push the index
+    push ax                        ; Push the scaled value (y)
+    call plot_xy                   ; Call plot_xy with the index and value
+    add sp, 4                      ; Clean up the stack (2 * 2 bytes)
+
+    inc si                         ; Move to the next element in int_sinal_array
+    jmp .loop
+
+.end:
+    ret
+
+
+plot_histograma_original:
+	ret
+
+draw_menu_lines:
+    mov		ax,639
+    push	ax
     mov		ax,80
-    push		ax
+    push	ax
     mov		ax,0
-    push		ax
+    push	ax
     mov		ax,80
-    push		ax
-    call		line
+    push	ax
+    call	line
 
-	mov		byte[cor],branco_intenso
     mov		ax,65
-    push		ax
+    push	ax
     mov		ax,160
-    push		ax
+    push	ax
     mov		ax,0
-    push		ax
+    push	ax
     mov		ax,160
-    push		ax
-    call		line
+    push	ax
+    call	line
 
-	mov		byte[cor],branco_intenso
     mov		ax,65
-    push		ax
+    push	ax
     mov		ax,240
-    push		ax
+    push	ax
     mov		ax,0
-    push		ax
+    push	ax
     mov		ax,240
-    push		ax
-    call		line
+    push	ax
+    call	line
 
-	mov		byte[cor],branco_intenso
     mov		ax,65
-    push		ax
+    push	ax
     mov		ax,320
-    push		ax
+    push	ax
     mov		ax,0
-    push		ax
+    push	ax
     mov		ax,320
-    push		ax
-    call		line
+    push	ax
+    call	line
 
-	mov		byte[cor],branco_intenso
     mov		ax,65
-    push		ax
+    push	ax
     mov		ax,400
-    push		ax
+    push	ax
     mov		ax,0
-    push		ax
+    push	ax
     mov		ax,400
-    push		ax
-    call		line
+    push	ax
+    call	line
 
-	mov		byte[cor],branco_intenso
     mov		ax,65
-    push		ax
+    push	ax
     mov		ax,0
-    push		ax
+    push	ax
     mov		ax,65
-    push		ax
-    mov		ax,480
-    push		ax
-    call		line
+    push	ax
+    mov		ax,479
+    push	ax
+    call	line
 
-	mov		byte[cor],branco_intenso
-	mov		dh,40
-	mov		dl,5
+	mov		ax,65
+    push	ax
+    mov		ax,250
+    push	ax
+    mov		ax,639
+    push	ax
+    mov		ax,250
+    push	ax
+    call	line
+
+	mov		ax,385
+    push	ax
+    mov		ax,479
+    push	ax
+    mov		ax,385
+    push	ax
+    mov		ax,80
+    push	ax
+    call	line
+	ret
+
+write_abrir:
+	mov		dh,2
+	mov		dl,2
 	lea		bx,[Abrir]
 	call	write_string
+	ret
 
-    call video_close
+write_fir1:
+	mov		dh,7
+	mov		dl,2
+	lea		bx,[FIR1]
+	call	write_string
+	ret
 
-    mov eax, 1
-    mov ebx, 0
-    int 80h
+write_fir2:
+	mov		dh,12
+	mov		dl,2
+	lea		bx,[FIR2]
+	call	write_string
+	ret
 
+write_fir3:
+	mov		dh,17
+	mov		dl,2
+	lea		bx,[FIR3]
+	call	write_string
+	ret
 
+write_histograma:
+	mov		dh,21
+	mov		dl,0
+	lea		bx,[Histogra]
+	call	write_string
+	mov		dh,22
+	mov		dl,0
+	lea		bx,[mas]
+	call	write_string
+	ret
+
+write_sair:
+	mov		dh,27
+	mov		dl,2
+	lea		bx,[Sair]
+	call	write_string
+	ret
+
+write_nome:
+	mov		dh,27
+	mov		dl,12
+	lea		bx,[Nome]
+	call	write_string
+	ret
 
 video_setup:
-    mov  		ah,0Fh
-    int  		10h
-    mov  		[modo_anterior],al   
-    mov     	al,12h
-    mov     	ah,0
-    int     	10h
+    mov  	ah,0Fh
+    int  	10h
+    mov  	[modo_anterior],al   
+    mov     al,12h
+    mov     ah,0
+    int     10h
 	ret
 
 video_close:
@@ -110,16 +394,16 @@ video_close:
 
 cursor:
 	pushf
-	push 		ax
-	push 		bx
-	push		cx
-	push		dx
-	push		si
-	push		di
-	push		bp
-	mov     	ah,2
-	mov     	bh,0
-	int     	10h
+	push 	ax
+	push 	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	bp
+	mov     ah,2
+	mov     bh,0
+	int     10h
 	pop		bp
 	pop		di
 	pop		si
@@ -132,18 +416,18 @@ cursor:
 
 caracter:
     pushf
-    push 		ax
-    push 		bx
-    push		cx
-    push		dx
-    push		si
-    push		di
-    push		bp
-    mov     	ah,9
-    mov     	bh,0
-    mov     	cx,1
-    mov     	bl,[cor]
-    int     	10h
+    push 	ax
+    push 	bx
+    push	cx
+    push	dx
+    push	si
+    push	di
+    push	bp
+    mov     ah,9
+    mov     bh,0
+    mov     cx,1
+    mov     bl,[cor]
+    int     10h
     pop		bp
     pop		di
     pop		si
@@ -157,35 +441,32 @@ caracter:
 write_string:
 	mov		al,[bx]
 	cmp		al,'$'
-	je		fim_write_string
+	je		.end
 	call	cursor
 	call	caracter
-	ret
-	call	delay
 	inc		bx
 	inc		dl
 	jmp 	write_string
-fim_write_string:
+.end:
 	ret
 	
-
 plot_xy:
-    push		bp
+    push	bp
     mov		bp,sp
     pushf
-    push 		ax
-    push 		bx
-    push		cx
-    push		dx
-    push		si
-    push		di
-    mov     	ah,0ch
-    mov     	al,[cor]
-    mov     	bh,0
-    mov     	dx,479
+    push 	ax
+    push 	bx
+    push	cx
+    push	dx
+    push	si
+    push	di
+    mov     ah,0ch
+    mov     al,[cor]
+    mov     bh,0
+    mov     dx,479
     sub		dx,[bp+4]
-    mov     	cx,[bp+6]
-    int     	10h
+    mov     cx,[bp+6]
+    int     10h
     pop		di
     pop		si
     pop		dx
@@ -215,25 +496,25 @@ circle:
 	add		dx,cx       ;ponto extremo superior
 	push    ax			
 	push	dx
-	call plot_xy
+	call 	plot_xy
 	
 	mov		dx,bx
 	sub		dx,cx       ;ponto extremo inferior
 	push    ax			
 	push	dx
-	call plot_xy
+	call 	plot_xy
 	
 	mov 	dx,ax	
 	add		dx,cx       ;ponto extremo direita
 	push    dx			
 	push	bx
-	call plot_xy
+	call 	plot_xy
 	
 	mov		dx,ax
 	sub		dx,cx       ;ponto extremo esquerda
 	push    dx			
 	push	bx
-	call plot_xy
+	call 	plot_xy
 		
 	mov		di,cx
 	sub		di,1	 ;di=r-1
@@ -265,56 +546,56 @@ plotar:
 	mov		si,cx
 	add		si,bx
 	push    si			;coloca a ordenada y+yc na pilha
-	call plot_xy		;toma conta do segundo octante
+	call 	plot_xy		;toma conta do segundo octante
 	mov		si,ax
 	add		si,dx
 	push    si			;coloca a abcisa xc+x na pilha
 	mov		si,bx
 	sub		si,cx
 	push    si			;coloca a ordenada yc-y na pilha
-	call plot_xy		;toma conta do s�timo octante
+	call 	plot_xy		;toma conta do s�timo octante
 	mov		si,ax
 	add		si,cx
 	push    si			;coloca a abcisa xc+y na pilha
 	mov		si,bx
 	add		si,dx
 	push    si			;coloca a ordenada yc+x na pilha
-	call plot_xy		;toma conta do segundo octante
+	call 	plot_xy		;toma conta do segundo octante
 	mov		si,ax
 	add		si,cx
 	push    si			;coloca a abcisa xc+y na pilha
 	mov		si,bx
 	sub		si,dx
 	push    si			;coloca a ordenada yc-x na pilha
-	call plot_xy		;toma conta do oitavo octante
+	call 	plot_xy		;toma conta do oitavo octante
 	mov		si,ax
 	sub		si,dx
 	push    si			;coloca a abcisa xc-x na pilha
 	mov		si,bx
 	add		si,cx
 	push    si			;coloca a ordenada yc+y na pilha
-	call plot_xy		;toma conta do terceiro octante
+	call	 plot_xy		;toma conta do terceiro octante
 	mov		si,ax
 	sub		si,dx
 	push    si			;coloca a abcisa xc-x na pilha
 	mov		si,bx
 	sub		si,cx
 	push    si			;coloca a ordenada yc-y na pilha
-	call plot_xy		;toma conta do sexto octante
+	call 	plot_xy		;toma conta do sexto octante
 	mov		si,ax
 	sub		si,cx
 	push    si			;coloca a abcisa xc-y na pilha
 	mov		si,bx
 	sub		si,dx
 	push    si			;coloca a ordenada yc-x na pilha
-	call plot_xy		;toma conta do quinto octante
+	call 	plot_xy		;toma conta do quinto octante
 	mov		si,ax
 	sub		si,cx
 	push    si			;coloca a abcisa xc-y na pilha
 	mov		si,bx
 	add		si,dx
 	push    si			;coloca a ordenada yc-x na pilha
-	call plot_xy		;toma conta do quarto octante
+	call 	plot_xy		;toma conta do quarto octante
 	
 	cmp		cx,dx
 	jb		fim_circle  ;se cx (y) est� abaixo de dx (x), termina     
@@ -355,7 +636,7 @@ full_circle:
 	add		si,cx
 	push	ax		;coloca xc na pilha
 	push	si		;coloca yc+r na pilha
-	call line
+	call 	line
 	
 		
 	mov		di,cx
@@ -455,15 +736,15 @@ fim_full_circle:
 	ret		6
 
 line:
-    push		bp
+    push	bp
     mov		bp,sp
     pushf                        ;coloca os flags na pilha
-    push 		ax
-    push 		bx
-    push		cx
-    push		dx
-    push		si
-    push		di
+    push 	ax
+    push 	bx
+    push	cx
+    push	dx
+    push	si
+    push	di
     mov		ax,[bp+10]   ; resgata os valores das coordenadas
     mov		bx,[bp+8]    ; resgata os valores das coordenadas
     mov		cx,[bp+6]    ; resgata os valores das coordenadas
@@ -471,31 +752,32 @@ line:
     cmp		ax,cx
     je		line2
     jb		line1
-    xchg		ax,cx
-    xchg		bx,dx
+    xchg	ax,cx
+    xchg	bx,dx
     jmp		line1
 line2:		; deltax=0
     cmp		bx,dx  ;subtrai dx de bx
     jb		line3
-    xchg		bx,dx        ;troca os valores de bx e dx entre eles
+    xchg	bx,dx        ;troca os valores de bx e dx entre eles
 line3:	; dx > 
-    push		ax
-    push		bx
-    call 		plot_xy
+    push	ax
+    push	bx
+    call 	plot_xy
     cmp		bx,dx
     jne		line31
     jmp		fim_line
-line31:		inc		bx
+line31:		
+	inc		bx
     jmp		line3
 ;deltax <>0
 line1:
 ; comparar m�dulos de deltax e deltay sabendo que cx>ax
 ; cx > ax
-    push		cx
+    push	cx
     sub		cx,ax
     mov		[deltax],cx
     pop		cx
-    push		dx
+    push	dx
     sub		dx,bx
     ja		line32
     neg		dx
@@ -503,30 +785,30 @@ line32:
     mov		[deltay],dx
     pop		dx
 
-    push		ax
+    push	ax
     mov		ax,[deltax]
     cmp		ax,[deltay]
     pop		ax
     jb		line5
 
 ; cx > ax e deltax>deltay
-    push		cx
+    push	cx
     sub		cx,ax
     mov		[deltax],cx
     pop		cx
-    push		dx
+    push	dx
     sub		dx,bx
     mov		[deltay],dx
     pop		dx
 
     mov		si,ax
 line4:
-    push		ax
-    push		dx
-    push		si
+    push	ax
+    push	dx
+    push	si
     sub		si,ax	;(x-x1)
     mov		ax,[deltay]
-    imul		si
+    imul	si
     mov		si,[deltax]		;arredondar
     shr		si,1
 ; se numerador (DX)>0 soma se <0 subtrai
@@ -535,15 +817,16 @@ line4:
     add		ax,si
     adc		dx,0
     jmp		arc1
-ar1:		sub		ax,si
+ar1:		
+	sub		ax,si
     sbb		dx,0
 arc1:
-    idiv		word [deltax]
+    idiv	word [deltax]
     add		ax,bx
     pop		si
-    push		si
-    push		ax
-    call		plot_xy
+    push	si
+    push	ax
+    call	plot_xy
     pop		dx
     pop		ax
     cmp		si,cx
@@ -553,14 +836,14 @@ arc1:
 
 line5:		cmp		bx,dx
     jb 		line7
-    xchg		ax,cx
-    xchg		bx,dx
+    xchg	ax,cx
+    xchg	bx,dx
 line7:
-    push		cx
+    push	cx
     sub		cx,ax
     mov		[deltax],cx
     pop		cx
-    push		dx
+    push	dx
     sub		dx,bx
     mov		[deltay],dx
     pop		dx
@@ -569,12 +852,12 @@ line7:
 
     mov		si,bx
 line6:
-    push		dx
-    push		si
-    push		ax
+    push	dx
+    push	si
+    push	ax
     sub		si,bx	;(y-y1)
     mov		ax,[deltax]
-    imul		si
+    imul	si
     mov		si,[deltay]		;arredondar
     shr		si,1
 ; se numerador (DX)>0 soma se <0 subtrai
@@ -583,17 +866,18 @@ line6:
     add		ax,si
     adc		dx,0
     jmp		arc2
-ar2:		sub		ax,si
+ar2:		
+	sub		ax,si
     sbb		dx,0
 arc2:
-    idiv		word [deltay]
+    idiv	word [deltay]
     mov		di,ax
     pop		ax
     add		di,ax
     pop		si
-    push		di
-    push		si
-    call		plot_xy
+    push	di
+    push	si
+    call	plot_xy
     pop		dx
     cmp		si,dx
     je		fim_line
@@ -614,39 +898,21 @@ fim_line:
 
 ; funcao que aguarda um tempo pre-determinado
 delay:
-	mov cx, 200; Carrega o valor 3 no registrador cx (contador para loop)
+	push	cx
+	mov 	cx, 200; Carrega o valor 3 no registrador cx (contador para loop)
 del2:
-	push cx; Coloca cx na pilha para usa-lo em outro loop
-	mov cx, 0; Zera cx
+	push 	cx; Coloca cx na pilha para usa-lo em outro loop
+	mov 	cx, 0; Zera cx
 del1:
-	loop del1; No loop del1, cx eh decrementado seguidamente ate que volte a ser zero
-	pop cx; Recupera cx da pilha
-	loop del2; No loop del2, cx eh decrementado seguidamente ate que seja zero
+	loop	del1; No loop del1, cx eh decrementado seguidamente ate que volte a ser zero
+	pop 	cx; Recupera cx da pilha
+	loop 	del2; No loop del2, cx eh decrementado seguidamente ate que seja zero
+	pop 	cx
 	ret
 
 
 segment data
-
 cor		db		branco_intenso
-
-;	I R G B COR
-;	0 0 0 0 preto
-;	0 0 0 1 azul
-;	0 0 1 0 verde
-;	0 0 1 1 cyan
-;	0 1 0 0 vermelho
-;	0 1 0 1 magenta
-;	0 1 1 0 marrom
-;	0 1 1 1 branco
-;	1 0 0 0 cinza
-;	1 0 0 1 azul claro
-;	1 0 1 0 verde claro
-;	1 0 1 1 cyan claro
-;	1 1 0 0 rosa
-;	1 1 0 1 magenta claro
-;	1 1 1 0 amarelo
-;	1 1 1 1 branco intenso
-
 preto		equ		0
 azul		equ		1
 verde		equ		2
@@ -671,11 +937,19 @@ deltax		dw		0
 deltay		dw		0	
 
 Abrir		db		'Abrir$'
-FIR1		db		'FIR1'
-FIR2		db		'FIR2'
-FIR3		db		'FIR3'
-Histograma	db		'Histograma'
-Sair		db		'Sair'
+FIR1		db		'FIR1$'
+FIR2		db		'FIR2$'
+FIR3		db		'FIR3$'
+Histogra	db		'Histogra$'
+mas			db		'mas$'
+Sair		db		'Sair$'
+Nome		db		'Breno Uliana de Angelo$'
+filename 	db 		'sinalep1.txt'
+handle		dw		0
+sinal_array	resb	2048
+teste 		db		'Um teste$'
+int_sinal_array		resb	2048
+sinal_size	dw		0
 
 segment stack stack
     resb 256
