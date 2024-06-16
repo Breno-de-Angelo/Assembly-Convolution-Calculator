@@ -15,7 +15,7 @@ segment code
 	jmp 	main
 
 sair:
-	call 	video_close
+	; call 	video_close
     mov 	ah, 4ch
 	int 	21h
 
@@ -97,19 +97,28 @@ abrir_function:
 	call	read_txt
 	call	convert_vector_to_int
 	call	plot_sinal_original
-	; call	plot_histograma_original
+	call	plot_histograma_original
 	ret
 
 fir1_function:
 	call	write_fir1
+	mov		word[filter_width], 6
+	call	calculate_convolution
+	call	plot_sinal_filtrado
 	ret
 
 fir2_function:
 	call	write_fir2
+	mov		word[filter_width], 11
+	call	calculate_convolution
+	call	plot_sinal_filtrado
 	ret
 
 fir3_function:
 	call	write_fir3
+	mov		word[filter_width], 18
+	call	calculate_convolution
+	call	plot_sinal_filtrado
 	ret
 
 histograma_function:
@@ -141,14 +150,15 @@ read_txt:
 	ret
 
 convert_vector_to_int:
-    mov di, int_sinal_array
-    mov si, sinal_array
+    mov di, 0
+    mov si, 0
 	mov word[sinal_size], 0
 	mov ch, 0
 	mov ax, 0
 
 .convert_number:
-    mov cl, byte[si]
+    mov cl, byte[sinal_array+si]
+    inc si
     cmp cl, '$'
     je .end
 
@@ -159,17 +169,13 @@ convert_vector_to_int:
 	jmp .convert_positive
 
 .convert_negative:
-	int 3
-    inc si
-	inc bx
-	int 3
-	mov cl, byte[si]
+	mov cl, byte[sinal_array+si]
+	inc si
 	cmp cl, 10
 	je .store_number
 	sub cl, '0'
 	mov ch, 0
-	mov dx, 10
-	mul dx
+	imul ax, 10
 	sub ax, cx
 	jmp .convert_negative
 
@@ -177,63 +183,93 @@ convert_vector_to_int:
 	sub cl, '0'
 	mov ch, 0
 	add ax, cx
-	inc si
 .next_positive_digit:
-	mov cl, byte[si]
+	mov cl, byte[sinal_array+si]
+	inc si
 	cmp cl, 10
 	je .store_number
 	sub cl, '0'
 	mov ch, 0
-	mov dx, 10
-	mul dx
+	imul ax, 10
 	add ax, cx
 	jmp .next_positive_digit
 
 .store_number:
-	mov [di], ax
-	mov ax, [sinal_size]
-	inc ax
-	mov [sinal_size], ax
+	mov [int_sinal_array+di], al
 	inc di
 	jmp .convert_number
 
 .end:
+	mov [sinal_size], di
     ret
 
 plot_sinal_original:
-    mov si, 0                      ; si: index for int_sinal_array
-    mov cx, [sinal_size]           ; cx: number of elements to process
-
-.loop:
-    cmp si, cx                     ; Check if we reached the end of the array
-    jge .end
-
-	mov	ax, si
+	mov si, 0
+.loop
+	mov ax, si
 	add ax, 66
 	push ax
+	mov al, byte[int_sinal_array+si]
+	cbw
+	imul ax, 7
+	sar ax, 3
+	add ax, 365
+	push ax
+	call plot_xy
+	inc si
+	cmp si, [sinal_size]
+	jl .loop
+	ret
 
-	mov ax, 0
-    mov al, [int_sinal_array + si] ; Load the value from int_sinal_array
-    ; Scale y value between 250 and 480
-    ; Formula: y_scaled = 250 + ((value + 128) * 231 / 256)
-    add al, 128                    ; Move range from [-128, 127] to [0, 255]
-    mov ah, 0                      ; Clear upper byte
-    mov bx, 231                    ; Multiply by 231
-    mul bx                         ; DX:AX = AX * BX
-    shr ax, 8                      ; Divide by 256 (use shift right by 8 bits)
-    add ax, 250                    ; Shift to start at 250
+plot_sinal_filtrado:
+	mov si, 0
+.loop
+	mov ax, si
+	add ax, 66
+	push ax
+	mov al, byte[int_sinal_array+si]
+	cbw
+	imul ax, 20
+	sar ax, 5
+	add ax, 165
+	push ax
+	call plot_xy
+	inc si
+	cmp si, [sinal_size]
+	jl .loop
+	ret
 
-    push si                        ; Push the index
-    push ax                        ; Push the scaled value (y)
-    call plot_xy                   ; Call plot_xy with the index and value
-    add sp, 4                      ; Clean up the stack (2 * 2 bytes)
+calculate_convolution:
+	mov cx, [filter_width]
+	mov di, 0
 
-    inc si                         ; Move to the next element in int_sinal_array
-    jmp .loop
+.zeros_loop:
+	mov byte[sinal_filtrado+di], 0
+	inc di
+	loop .zeros_loop
 
-.end:
-    ret
+	mov cx, [sinal_size]
+	
+.calculate_element:
+	mov bx, cx
+	mov cx, [filter_width]
+	mov dx, 0
+	mov si, di
+	dec si
 
+.convolution_loop:
+	mov al, [int_sinal_array+si]
+	cbw
+	dec si
+	add dx, ax
+	loop .convolution_loop
+
+	mov byte[sinal_filtrado+di], dl
+	inc di
+	mov cx, bx
+	loop .calculate_element
+
+	ret
 
 plot_histograma_original:
 	ret
@@ -950,6 +986,8 @@ sinal_array	resb	2048
 teste 		db		'Um teste$'
 int_sinal_array		resb	2048
 sinal_size	dw		0
+sinal_filtrado		resb	2048
+filter_width	dw	0
 
 segment stack stack
     resb 256
