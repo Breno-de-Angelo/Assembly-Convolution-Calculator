@@ -6,7 +6,6 @@ segment code
 	mov 	ax,stack
 	mov 	ss,ax
 	mov 	sp,stacktop
-	call	read_txt
     call 	video_setup
 
     mov		byte[cor],branco_intenso
@@ -21,6 +20,7 @@ sair:
 	int 	21h
 
 main:
+	call	delay
 	; mov		ah, 01h
     ; int		16h
     ; jnz 	sair
@@ -95,40 +95,72 @@ initialize_mouse:
 
 abrir_function:
 	call	write_abrir
-	; call	read_txt
+	cmp		byte[aberto], 1
+	je		fechar
+	call	read_txt
 	call	convert_vector_to_int
 	call	plot_sinal_original
 	call	plot_histograma_original
+	mov		byte[aberto], 1
+	ret
+fechar:
+	mov		byte[cor], preto
+	call	plot_sinal_original
+	call	plot_sinal_filtrado
+	call	zero_sinais
+	mov		byte[aberto], 0
+	ret
+
+zero_sinais:
+	mov		si, 0
+	mov		cx, 2048
+.loop
+	mov		byte[int_sinal_array+si], 0
+	mov		byte[sinal_array+si], 0
+	mov		byte[sinal_filtrado+si], 0
+	inc		si
+	loop	.loop
+	mov		byte[sinal_array], '$'
+	mov		word[sinal_size], 0
 	ret
 
 fir1_function:
 	call	write_fir1
+	cmp 	byte[aberto], 0
+	je		fechar_fir1
 	mov		byte[cor], preto
 	call	plot_sinal_filtrado
 	mov		byte[cor], verde
 	mov		word[filter_width], 6
 	call	calculate_convolution
 	call	plot_sinal_filtrado
+fechar_fir1
 	ret
 
 fir2_function:
 	call	write_fir2
+	cmp 	byte[aberto], 0
+	je		fechar_fir2
 	mov		byte[cor], preto
 	call	plot_sinal_filtrado
 	mov		byte[cor], verde
 	mov		word[filter_width], 11
 	call	calculate_convolution
 	call	plot_sinal_filtrado
+fechar_fir2:
 	ret
 
 fir3_function:
 	call	write_fir3
+	cmp 	byte[aberto], 0
+	je		fechar_fir3
 	mov		byte[cor], preto
 	call	plot_sinal_filtrado
 	mov		byte[cor], verde
 	mov		word[filter_width], 18
 	call	calculate_convolution
 	call	plot_sinal_filtrado
+fechar_fir3:
 	ret
 
 histograma_function:
@@ -160,128 +192,128 @@ read_txt:
 	ret
 
 convert_vector_to_int:
-    mov di, 0
-    mov si, 0
-	mov word[sinal_size], 0
-	mov ch, 0
-	mov ax, 0
+    mov 	di, 0
+    mov 	si, 0
+	mov 	word[sinal_size], 0
+	mov 	ch, 0
+	mov 	ax, 0
 
 .convert_number:
-    mov cl, byte[sinal_array+si]
-    inc si
-    cmp cl, '$'
-    je .end
+    mov 	cl, byte[sinal_array+si]
+    inc 	si
+    cmp 	cl, '$'
+    je 		.end
 
     ; Check for sign
-    mov ax, 0
-    cmp cl, '-'
-    je .convert_negative
-	jmp .convert_positive
+    mov 	ax, 0
+    cmp 	cl, '-'
+    je 		.convert_negative
+	jmp 	.convert_positive
 
 .convert_negative:
-	mov cl, byte[sinal_array+si]
-	inc si
-	cmp cl, 10
-	je .store_number
-	sub cl, '0'
-	mov ch, 0
-	imul ax, 10
-	sub ax, cx
-	jmp .convert_negative
+	mov 	cl, byte[sinal_array+si]
+	inc 	si
+	cmp 	cl, 10
+	je 		.store_number
+	sub 	cl, '0'
+	mov 	ch, 0
+	imul 	ax, 10
+	sub 	ax, cx
+	jmp 	.convert_negative
 
 .convert_positive:
-	sub cl, '0'
-	mov ch, 0
-	add ax, cx
+	sub 	cl, '0'
+	mov 	ch, 0
+	add 	ax, cx
 .next_positive_digit:
-	mov cl, byte[sinal_array+si]
-	inc si
-	cmp cl, 10
-	je .store_number
-	sub cl, '0'
-	mov ch, 0
-	imul ax, 10
-	add ax, cx
-	jmp .next_positive_digit
+	mov 	cl, byte[sinal_array+si]
+	inc 	si
+	cmp 	cl, 10
+	je 		.store_number
+	sub 	cl, '0'
+	mov 	ch, 0
+	imul 	ax, 10
+	add 	ax, cx
+	jmp 	.next_positive_digit
 
 .store_number:
-	mov [int_sinal_array+di], al
-	inc di
-	jmp .convert_number
+	mov 	[int_sinal_array+di], al
+	inc 	di
+	jmp 	.convert_number
 
 .end:
-	mov [sinal_size], di
+	mov 	[sinal_size], di
     ret
 
 plot_sinal_original:
-	mov si, 0
+	mov 	si, 0
 .loop
-	mov ax, si
-	add ax, 66
-	push ax
-	mov al, byte[int_sinal_array+si]
+	mov 	ax, si
+	add 	ax, 66
+	push 	ax
+	mov 	al, byte[int_sinal_array+si]
 	cbw
-	imul ax, 7
-	sar ax, 3
-	add ax, 365
-	push ax
-	call plot_xy
-	inc si
-	cmp si, [sinal_size]
-	jl .loop
+	imul 	ax, 7
+	sar 	ax, 3
+	add 	ax, 365
+	push 	ax
+	call 	plot_xy
+	inc 	si
+	cmp 	si, [sinal_size]
+	jl 		.loop
 	ret
 
 plot_sinal_filtrado:
-	mov si, 0
+	mov 	si, 0
 .loop
-	mov ax, si
-	add ax, 66
-	push ax
-	mov al, byte[sinal_filtrado+si]
+	mov 	ax, si
+	add 	ax, 66
+	push 	ax
+	mov 	al, byte[sinal_filtrado+si]
 	cbw
-	imul ax, 20
-	sar ax, 5
-	add ax, 165
-	push ax
-	call plot_xy
-	inc si
-	cmp si, [sinal_size]
-	jl .loop
+	imul 	ax, 20
+	sar 	ax, 5
+	add 	ax, 165
+	push 	ax
+	call 	plot_xy
+	inc 	si
+	cmp 	si, [sinal_size]
+	jl 		.loop
 	ret
 
 calculate_convolution:
-	mov cx, [filter_width]
-	mov di, 0
+	mov 	cx, [filter_width]
+	mov 	di, 0
 
 .zeros_loop:
-	mov byte[sinal_filtrado+di], 0
-	inc di
-	loop .zeros_loop
+	mov 	byte[sinal_filtrado+di], 0
+	inc 	di
+	loop 	.zeros_loop
 
-	mov cx, [sinal_size]
+	mov 	cx, [sinal_size]
 	
 .calculate_element:
-	mov bx, cx
-	mov cx, [filter_width]
-	mov dx, 0
-	mov si, di
-	dec si
+	mov 	bx, cx
+	mov 	cx, [filter_width]
+	mov 	dx, 0
+	mov 	si, di
+	dec 	si
 
 .convolution_loop:
-	mov al, [int_sinal_array+si]
+	mov 	al, [int_sinal_array+si]
 	cbw
-	dec si
-	add dx, ax
-	loop .convolution_loop
+	dec 	si
+	add 	dx, ax
+	loop 	.convolution_loop
 
-	mov ax, dx
-	mov cx, [filter_width]
-	idiv cl
-	mov byte[sinal_filtrado+di], al
+	mov 	ax, dx
+	mov 	cx, [filter_width]
+	idiv 	cl
+	mov 	byte[sinal_filtrado+di], al
 
-	inc di
-	mov cx, bx
-	loop .calculate_element
+	inc 	di
+	mov 	cx, bx
+	loop 	.calculate_element
 
 	ret
 
@@ -994,7 +1026,7 @@ Histogra	db		'Histogra$'
 mas			db		'mas$'
 Sair		db		'Sair$'
 Nome		db		'Breno Uliana de Angelo$'
-filename 	db 		'sinalep1.txt'
+filename 	db 		'sinalep1.txt', 0
 handle		dw		0
 sinal_array	resb	2048
 teste 		db		'Um teste$'
@@ -1002,6 +1034,7 @@ int_sinal_array		resb	2048
 sinal_size	dw		0
 sinal_filtrado		resb	2048
 filter_width	dw	0
+aberto		db		0
 
 segment stack stack
     resb 256
