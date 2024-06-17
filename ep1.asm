@@ -6,6 +6,7 @@ segment code
 	mov 	ax,stack
 	mov 	ss,ax
 	mov 	sp,stacktop
+	call	read_txt
     call 	video_setup
 
     mov		byte[cor],branco_intenso
@@ -94,7 +95,7 @@ initialize_mouse:
 
 abrir_function:
 	call	write_abrir
-	call	read_txt
+	; call	read_txt
 	call	convert_vector_to_int
 	call	plot_sinal_original
 	call	plot_histograma_original
@@ -102,6 +103,9 @@ abrir_function:
 
 fir1_function:
 	call	write_fir1
+	mov		byte[cor], preto
+	call	plot_sinal_filtrado
+	mov		byte[cor], verde
 	mov		word[filter_width], 6
 	call	calculate_convolution
 	call	plot_sinal_filtrado
@@ -109,6 +113,9 @@ fir1_function:
 
 fir2_function:
 	call	write_fir2
+	mov		byte[cor], preto
+	call	plot_sinal_filtrado
+	mov		byte[cor], verde
 	mov		word[filter_width], 11
 	call	calculate_convolution
 	call	plot_sinal_filtrado
@@ -116,6 +123,9 @@ fir2_function:
 
 fir3_function:
 	call	write_fir3
+	mov		byte[cor], preto
+	call	plot_sinal_filtrado
+	mov		byte[cor], verde
 	mov		word[filter_width], 18
 	call	calculate_convolution
 	call	plot_sinal_filtrado
@@ -227,7 +237,7 @@ plot_sinal_filtrado:
 	mov ax, si
 	add ax, 66
 	push ax
-	mov al, byte[int_sinal_array+si]
+	mov al, byte[sinal_filtrado+si]
 	cbw
 	imul ax, 20
 	sar ax, 5
@@ -264,7 +274,11 @@ calculate_convolution:
 	add dx, ax
 	loop .convolution_loop
 
-	mov byte[sinal_filtrado+di], dl
+	mov ax, dx
+	mov cx, [filter_width]
+	idiv cl
+	mov byte[sinal_filtrado+di], al
+
 	inc di
 	mov cx, bx
 	loop .calculate_element
