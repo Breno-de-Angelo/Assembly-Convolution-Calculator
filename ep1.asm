@@ -15,7 +15,7 @@ segment code
 	jmp 	main
 
 sair:
-	; call 	video_close
+	call 	video_close
     mov 	ah, 4ch
 	int 	21h
 
